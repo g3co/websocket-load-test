@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -13,21 +14,33 @@ import (
 
 var count int64
 
-func main()  {
+func main() {
+	args := os.Args[1:]
+	if len(args) != 2 {
+		log.Fatal("Mismatch arguments quantity: websocket-load-test [ws address] [threads num]")
+	}
+
+	threads, err := strconv.Atoi(args[1])
+	if err != nil {
+		log.Fatal("can't parse threads num", err)
+	}
+
+	log.Printf("connecting to the %s", args[0])
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	attempts := 0
 	go func() {
-		buf := make(chan struct{}, 900)
+		buf := make(chan struct{}, threads)
 		for {
 			buf <- struct{}{}
 			attempts++
-			go connection(ctx, buf)
+			go connection(ctx, args[0], buf)
 		}
 	}()
 
 	go func() {
-		tick := time.Tick(time.Second*5)
+		tick := time.Tick(time.Second * 1)
 		prevAttempts := 0
 		for {
 			<-tick
@@ -39,7 +52,7 @@ func main()  {
 	}()
 
 	go func() {
-		tick := time.Tick(time.Second*5)
+		tick := time.Tick(time.Second * 30)
 
 		for {
 			select {
@@ -58,14 +71,13 @@ func main()  {
 	cancel()
 }
 
-func connection(ctx context.Context, buf <-chan struct{})  {
+func connection(ctx context.Context, host string, buf <-chan struct{}) {
 	defer func() {
 		<-buf
 	}()
 
-	c, _, err := websocket.DefaultDialer.Dial("wss://rw-manager.rock-west.net/ticks_feed", nil)
+	c, _, err := websocket.DefaultDialer.Dial(host, nil)
 	if err != nil {
-		log.Println("dial:", err)
 		return
 	}
 
